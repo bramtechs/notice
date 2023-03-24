@@ -1,8 +1,10 @@
 import std.stdio;
 import std.string;
 import std.getopt;
+import std.conv;
 import std.file;
 
+const string[] KEYWORDS = ["HACK", "TODO", "FIX", "FIXME", "BUG"];
 const string EXAMPLE_CMD = "Example: ./notice -i ~/dev/my-project -o ~/dev/my-project/TODO.md -v -e c,cpp";
 
 static bool IsVerbose = false;
@@ -24,67 +26,161 @@ unittest {
     assert(getFileName("test/hello/world.txt") == "world.txt");
 }
 
-bool shouldRead(DirEntry entry, string outputFile, string[] extensions=[])
+bool containsKeyword(string line)
+{
+    foreach(string key; KEYWORDS)
+    {
+        if (line.indexOf(key) != -1)
+            return true;
+    }
+    return false;
+}
+
+string[] parseFile(DirEntry entry)
+{
+    if (IsVerbose) writeln("Parsing file " ~ entry.name ~ " ...");
+
+    string[] notes;
+    string content;
+    try
+    {
+        content = readText(entry);
+    }
+    catch (Exception ex)
+    {
+        if (IsVerbose) writeln("Couldn't read " ~ entry.name);
+        return [];
+    }
+
+    foreach (string line; content.split("\n"))
+    {
+        if (line.indexOf("//") == -1)
+            continue;
+
+        if (!containsKeyword(line))
+            continue;
+
+        // remove comment markers
+        string note = line.strip().chompPrefix("//").strip();
+        notes ~= note;
+    }
+    return notes;
+}
+
+struct SearchQuery
+{
+    DirEntry source;
+    string[] extFilters;
+    string outputFile;
+
+    this(DirEntry source, string outputFile, string[] extFilters)
+    {
+        this.source = source;
+        this.outputFile = outputFile;
+        this.extFilters = extFilters;
+    }
+
+    bool hasExtensions()
+    {
+        return extFilters.length > 0;
+    }
+
+    bool matchesAnyExtension(string path)
+    {
+        if (extFilters.length == 0)
+            return true;
+
+        foreach (string ext; extFilters)
+        {
+            string e = "." ~ ext.chompPrefix(".");
+            if (path.indexOf(e) != -1)
+                return true;
+        }
+        return false;
+    }
+};
+
+bool shouldRead(DirEntry entry, SearchQuery query, string* rejectReason=null)
 {
     string fileName = getFileName(entry);
 
     // only include extensions
-    if (extensions.length > 0)
+    if (!query.matchesAnyExtension(fileName))
     {
-        bool matches = false;
-        foreach (string ext; extensions)
-        {
-            string e = "." ~ ext.chompPrefix(".");
-            if (fileName.indexOf(e) != -1)
-            {
-                matches = true;
-                break;
-            }
-        }
-        if (!matches)
-            return false;
+        if (rejectReason) *rejectReason = "Unwanted filetype";
+        return false;
     }
 
     // don't include output file (if exists)
-    if (fileName.indexOf(outputFile))
+    if (!query.outputFile.empty && fileName.indexOf(query.outputFile) != -1)
     {
-
+        if (rejectReason) *rejectReason = "Is output file";
+        return false;
     }
 
     // don't include hidden files
     if (fileName.indexOf(".") == 0)
+    {
+        if (rejectReason) *rejectReason = "Hidden file";
         return false;
+    }
 
     // don't include empty or large files
     if (entry.size == 0 || entry.size > 1000000)
+    {
+        if (rejectReason) *rejectReason = "Too large";
         return false;
+    }
 
     return true;
 }
 
-DirEntry[] crawlDir(DirEntry path, string outputFile, string[] extensions=[])
+DirEntry[] crawlDir(DirEntry path, SearchQuery query)
 {
     DirEntry[] entries;
     foreach(DirEntry entry; dirEntries(path, SpanMode.shallow))
     {
+        string rejection;
         if (entry.isDir && entry.name.lastIndexOf("/.") == -1)
         {
-            if (IsVerbose) writeln(">> ", entry.name);
-            entries ~= crawlDir(entry, outputFile, extensions);
+            if (IsVerbose) writeln(">> Entering: ", entry.name);
+            entries ~= crawlDir(entry, query);
         }
-        else if (shouldRead(entry, outputFile, extensions))
+        else if (shouldRead(entry, query, &rejection))
         {
-            if (IsVerbose) writeln(entry.name, "\t", entry.size);
+            if (IsVerbose) writeln("Found " ~ entry.name);
             entries ~= entry;
+        }
+        else if (IsVerbose)
+        {
+            writeln("Skipped " ~ entry.name ~ " (" ~ rejection ~ ")");
         }
     }
     return entries;
 }
 
-string[] collectNotes(DirEntry path, string outputFile, string[] extensions=[])
+string collectNotes(DirEntry path, SearchQuery query, bool isDetailed)
 {
-    DirEntry[] entries = crawlDir(path, outputFile, extensions);
-    return [];
+    string result;
+    if (isDetailed) result ~= "# Automatically generated. Do not edit!\n\n";
+
+    foreach(DirEntry entry; crawlDir(path, query))
+    {
+        string[] notes = parseFile(entry);
+        if (notes.length == 0)
+            continue;
+
+        string relFilePath = entry.name.chompPrefix(path).chompPrefix("/");
+        if (isDetailed) result ~= "## " ~ relFilePath ~ " (" ~ text(notes.length) ~ " items)\n";
+
+        foreach (string note; notes)
+        {
+            result ~= note;
+            result ~= "\n";
+        }
+        if (isDetailed) result ~= "\n";
+    }
+    return result;
 }
 
 int main(string[] args)
@@ -92,13 +188,13 @@ int main(string[] args)
     string sourceFolder = "";
     string outputFile = "";
     string extensions = "";
-    bool showBanner = false;
+    bool isBare = false;
 
     auto helpInfo = getopt(
         args,
         "src|i", &sourceFolder,
         "output|o", &outputFile,
-        "banner|b", &showBanner,
+        "bare|b", &isBare,
         "verbose|v", &IsVerbose,
         "extensions|e", &extensions,
     );
@@ -115,21 +211,33 @@ int main(string[] args)
         return 1;
     }
 
-    if (outputFile.empty)
-    {
-        writeln("No output file provided!");
-        return 1;
-    }
-
-    // split extensions
-    string[] extensionList = [];
-    if (!extensions.empty)
-        extensionList = extensions.split(",");
-
     try
     {
         DirEntry srcEntry = DirEntry(sourceFolder);
-        collectNotes(srcEntry, outputFile, extensionList);
+
+        string[] exts;
+        if (extensions.empty)
+        {
+            if (IsVerbose) writeln("No extensions given.");
+            exts = [];
+        }
+        else
+        {
+            exts = extensions.split(",");
+        }
+
+        SearchQuery query = SearchQuery(srcEntry, outputFile, exts);
+
+        string result = collectNotes(srcEntry, query, !isBare);
+        if (outputFile.empty)
+        {
+            write(result);
+        }
+        else
+        {
+            std.file.write(outputFile, result);
+            if (IsVerbose) writeln("Wrote to file " ~ outputFile);
+        }
     }
     catch (FileException ex)
     {
