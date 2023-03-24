@@ -3,8 +3,7 @@ import std.string;
 import std.getopt;
 import std.file;
 
-const long MEGABYTE = 1024*1024*1024;
-const string EXAMPLE_CMD = "Example: notice -i ./src/ -o todos.md";
+const string EXAMPLE_CMD = "Example: ./notice -i ~/dev/my-project -o ~/dev/my-project/TODO.md -v -e c,cpp";
 
 static bool IsVerbose = false;
 
@@ -25,45 +24,66 @@ unittest {
     assert(getFileName("test/hello/world.txt") == "world.txt");
 }
 
-bool shouldRead(DirEntry entry)
+bool shouldRead(DirEntry entry, string outputFile, string[] extensions=[])
 {
-    // don't include hidden files
     string fileName = getFileName(entry);
 
-    if (fileName.indexOf('.') == 0)
+    // only include extensions
+    if (extensions.length > 0)
+    {
+        bool matches = false;
+        foreach (string ext; extensions)
+        {
+            string e = "." ~ ext.chompPrefix(".");
+            if (fileName.indexOf(e) != -1)
+            {
+                matches = true;
+                break;
+            }
+        }
+        if (!matches)
+            return false;
+    }
+
+    // don't include output file (if exists)
+    if (fileName.indexOf(outputFile))
+    {
+
+    }
+
+    // don't include hidden files
+    if (fileName.indexOf(".") == 0)
         return false;
 
     // don't include empty or large files
-    if (entry.size == 0 || entry.size > MEGABYTE/2)
+    if (entry.size == 0 || entry.size > 1000000)
         return false;
 
     return true;
 }
 
-DirEntry[] crawlDir(DirEntry path)
+DirEntry[] crawlDir(DirEntry path, string outputFile, string[] extensions=[])
 {
     DirEntry[] entries;
     foreach(DirEntry entry; dirEntries(path, SpanMode.shallow))
     {
-        if (shouldRead(entry))
+        if (entry.isDir && entry.name.lastIndexOf("/.") == -1)
         {
-            if (entry.isDir)
-            {
-                if (IsVerbose) writeln(">> ", entry.name);
-            }
-            else
-            {
-                if (IsVerbose) writeln(entry.name, "\t", entry.size);
-                entries ~= entry;
-            }
+            if (IsVerbose) writeln(">> ", entry.name);
+            entries ~= crawlDir(entry, outputFile, extensions);
+        }
+        else if (shouldRead(entry, outputFile, extensions))
+        {
+            if (IsVerbose) writeln(entry.name, "\t", entry.size);
+            entries ~= entry;
         }
     }
     return entries;
 }
 
-string[] collectNotes(DirEntry path)
+string[] collectNotes(DirEntry path, string outputFile, string[] extensions=[])
 {
-    DirEntry[] entries = crawlDir(path);
+    DirEntry[] entries = crawlDir(path, outputFile, extensions);
     return [];
 }
 
@@ -71,6 +91,7 @@ int main(string[] args)
 {
     string sourceFolder = "";
     string outputFile = "";
+    string extensions = "";
     bool showBanner = false;
 
     auto helpInfo = getopt(
@@ -79,6 +100,7 @@ int main(string[] args)
         "output|o", &outputFile,
         "banner|b", &showBanner,
         "verbose|v", &IsVerbose,
+        "extensions|e", &extensions,
     );
 
     if (helpInfo.helpWanted)
@@ -99,10 +121,15 @@ int main(string[] args)
         return 1;
     }
 
+    // split extensions
+    string[] extensionList = [];
+    if (!extensions.empty)
+        extensionList = extensions.split(",");
+
     try
     {
         DirEntry srcEntry = DirEntry(sourceFolder);
-        collectNotes(srcEntry);
+        collectNotes(srcEntry, outputFile, extensionList);
     }
     catch (FileException ex)
     {
@@ -114,5 +141,6 @@ int main(string[] args)
         writeln("Error: ", ex.msg);
     }
 
+    if (IsVerbose) writeln("Finished...");
     return 0;
 }
