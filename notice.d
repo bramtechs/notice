@@ -247,6 +247,7 @@ int main(string[] args)
     catch (StringException ex)
     {
         writeln("Error: ", ex.msg);
+        return 1;
     }
 
     if (IsVerbose) writeln("Finished...");
