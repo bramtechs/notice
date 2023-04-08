@@ -4,6 +4,8 @@ import std.getopt;
 import std.conv;
 import std.file;
 
+// FIXME: Todos are still sometimes taken out of TODO.md
+
 const string[] KEYWORDS = ["HACK", "TODO", "FIX", "FIXME", "BUG"];
 const string EXAMPLE_CMD = "Example: ./notice -i ~/dev/my-project -o ~/dev/my-project/TODO.md -v -e c,cpp";
 
@@ -162,7 +164,11 @@ DirEntry[] crawlDir(DirEntry path, SearchQuery query)
 string collectNotes(DirEntry path, SearchQuery query, bool isDetailed)
 {
     string result;
-    if (isDetailed) result ~= "# Automatically generated. Do not edit!\n\n";
+    if (isDetailed)
+    {
+        result ~= "# Things to do\n";
+        result ~= "Automatically generated. Do not edit by hand!\n\n";
+    }
 
     foreach(DirEntry entry; crawlDir(path, query))
     {
@@ -175,9 +181,9 @@ string collectNotes(DirEntry path, SearchQuery query, bool isDetailed)
 
         foreach (string note; notes)
         {
-            result ~= note;
-            result ~= "\n";
+            result ~= (isDetailed ? "- [ ] ":"") ~ note ~ "\n";
         }
+
         if (isDetailed) result ~= "\n";
     }
     return result;
