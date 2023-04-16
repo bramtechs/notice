@@ -196,18 +196,28 @@ int main(string[] args)
     string extensions = "";
     bool isBare = false;
 
-    auto helpInfo = getopt(
-        args,
-        "src|i", &sourceFolder,
-        "output|o", &outputFile,
-        "bare|b", &isBare,
-        "verbose|v", &IsVerbose,
-        "extensions|e", &extensions,
-    );
-
-    if (helpInfo.helpWanted)
+    bool showHelp = false;
+    GetoptResult cmdArgs;
+    try {
+        cmdArgs = getopt(
+            args,
+            "src|i", &sourceFolder,
+            "output|o", &outputFile,
+            "bare|b", &isBare,
+            "verbose|v", &IsVerbose,
+            "extensions|e", &extensions,
+        );
+    }
+    catch (Exception e)
     {
-        defaultGetoptPrinter(EXAMPLE_CMD, helpInfo.options);
+        stderr.writeln("An unknown or invalid argument was passed!");
+        defaultGetoptPrinter(EXAMPLE_CMD, cmdArgs.options);
+        return 1;
+    }
+
+    if (cmdArgs.helpWanted)
+    {
+        defaultGetoptPrinter(EXAMPLE_CMD, cmdArgs.options);
         return 0;
     }
 
