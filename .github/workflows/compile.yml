@@ -21,4 +21,4 @@ jobs:
           compiler: ${{ matrix.dc }}
 
       - name: Run build
-        run: dub
+        run: dub build
