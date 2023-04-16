@@ -257,7 +257,7 @@ int main(string[] args)
     }
     catch (FileException ex)
     {
-        writeln("Source folder %s doesn't exist!", sourceFolder);
+        writeln("Source folder " ~ sourceFolder ~ " doesn't exist!");
         return 1;
     }
     catch (StringException ex)
@@ -268,4 +268,42 @@ int main(string[] args)
 
     if (IsVerbose) writeln("Finished...");
     return 0;
+}
+
+// test non existant source folder
+unittest {
+    string[] args = ["./notice", "-i", "nonexistent", "-o", "TODO.md", "-v", "-e", "d"];
+    int code = main(args);
+    assert(code == 1);
+}
+
+// test empty folder
+unittest {
+    string[] args = ["./notice", "-i", "emptytest", "-o", "emptytest/TODO.md", "-v", "-e", "d"];
+    int code = main(args);
+    assert(code == 0);
+}
+
+// test folder with source
+unittest {
+    string[] args = ["./notice", "-i", "test", "-o", "test/TODO.md", "-v", "-e", "d"];
+    int code = main(args);
+    assert(code == 0);
+
+    string result = readText("test/TODO.md");
+    string expected = readText("testexpected.md");
+
+    bool matches = result == expected;
+    if (matches)
+    {
+        writeln("Generated items match!");
+    }
+    else
+    {
+        writeln("Generated todo files don't match!\n");
+        writeln("'"~result~"'");
+        writeln("expected: '"~expected~"'");
+    }
+
+    assert(matches);
 }

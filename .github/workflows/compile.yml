@@ -1,9 +1,9 @@
-name: Compile on all platforms
+name: Compile and test on all platforms
 on: [push, pull_request]
 
 jobs:
   test:
-    name: Dub Build
+    name: Dub test
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
@@ -20,5 +20,5 @@ jobs:
         with:
           compiler: ${{ matrix.dc }}
 
-      - name: Run build
-        run: dub build
+      - name: Run tests
+        run: dub test
